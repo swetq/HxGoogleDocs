@@ -9,23 +9,17 @@ import haxe.Http;
 
  using StringTools;
 
-class HxGoogleSpreadsheet 
-{
-
-	//private var email:String;
-	//private var passwd:String;
+class HxGoogleSpreadsheet {
 	private var key:String;
 	private var authToken:String;
 	private var worksheetLinks:WorksheetLinks;
+	private var xmlCellFeed:Xml;
 	
 	public function new(email:String, passwd:String, key:String) {
-		/*
-		this.email = email;
-		this.passwd = passwd;
-		*/
 		this.key = key;		
 		this.authToken = getAuthToken(email, passwd);
 		this.worksheetLinks = getWorksheetLinks(this.authToken, this.key);
+		this.xmlCellFeed = getCellFeed(this.authToken, this.worksheetLinks.cellLink);
 	}
 	
 	private static var urlClientLogin = 'https://www.google.com/accounts/ClientLogin';
@@ -64,7 +58,7 @@ class HxGoogleSpreadsheet
 		http.onError = function(msg:String) { trace(msg); }
 		http.onData = function(data:String) { 
 			var xmlFeed = Xml.parse(data).firstElement();
-			var xmlFirstEntry = Iterators.array(xmlFeed.elementsNamed('entry'))[0];
+			var xmlFirstEntry = Iterators.first(xmlFeed.elementsNamed('entry'));
 			var xmlEntryLinks = Iterators.array(xmlFirstEntry.elementsNamed('link'));
 			worksheetLinks.listLink =  xmlEntryLinks[0].get('href');
 			worksheetLinks.cellLink =  xmlEntryLinks[1].get('href');
@@ -73,32 +67,48 @@ class HxGoogleSpreadsheet
 		return worksheetLinks;
 	}
 	
-	private function getWorksheetCells(authToken:String, cellLink:String): WorksheetCells {
-		var cells = new WorksheetCells();
+	private function getCellFeed(authToken:String, cellLink:String): Xml {
+		var xmlCellFeed:Xml = null;
 		var http = getAuthorizedHttp(authToken, cellLink);
 		http.onError = function(msg:String) { trace(msg); }
 		http.onData = function(data:String) { 
-			var xmlListFeed = Xml.parse(data).firstElement();
-			var xmlEntries = Iterators.array(xmlListFeed.elementsNamed('entry'));
-			for (entry in xmlEntries) {
-				var cell = Iterators.array(entry.elementsNamed('gs:cell'))[0];
-				var text = cell.get('inputValue');
-				var row = Std.parseInt(cell.get('row'))-1;
-				var col = Std.parseInt(cell.get('col'))-1;
-				
-				if (cells[row] == null) cells[row] = new Array<String>();
-				cells[row][col] = text;
-			}
+			xmlCellFeed = Xml.parse(data).firstElement();
 		};
 		http.request(false);			
+		return xmlCellFeed;		
+	}	
+	
+	private function getWorksheetCells(xmlCellFeed:Xml): WorksheetCells {
+		var cells = new WorksheetCells();
+		var xmlEntries = Iterators.array(xmlCellFeed.elementsNamed('entry'));
+		for (entry in xmlEntries) {
+			var cell = Iterators.first(entry.elementsNamed('gs:cell'));
+			var text = cell.get('inputValue');
+			var row = Std.parseInt(cell.get('row'))-1;
+			var col = Std.parseInt(cell.get('col'))-1;
+			
+			if (cells[row] == null) cells[row] = new Array<String>();
+			cells[row][col] = text;
+		};
 		return cells;		
 	}	
+	
+	private function getWorksheetSize(xmlCellFeed:Xml):WorksheetSize {
+		var r:WorksheetSize = {
+			rows: Std.parseInt(Iterators.first(xmlCellFeed.elementsNamed('gs:rowCount')).firstChild().toString()),
+			cols: Std.parseInt(Iterators.first(xmlCellFeed.elementsNamed('gs:colCount')).firstChild().toString()),
+		}
+		return r;
+	}
 	
 	//-----------------------------------------------------------------
 	
 	public function getCells(): WorksheetCells {
-		return this.getWorksheetCells(this.authToken, this.worksheetLinks.cellLink);
-		
+		return getWorksheetCells(this.xmlCellFeed);
+	}
+	
+	public function getSize():WorksheetSize {
+		return getWorksheetSize(this.xmlCellFeed);
 	}
 	
 }
@@ -109,3 +119,8 @@ typedef WorksheetLinks = {
 }
 
 typedef WorksheetCells = Array<Array<String>>;
+
+typedef WorksheetSize = {
+	rows:Int,
+	cols:Int,
+}

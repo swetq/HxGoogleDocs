@@ -14,6 +14,7 @@ class Main {
 	
 	static function main() {
 		var gs = new HxGoogleDocs.HxGoogleSpreadsheet(email, passwd, keyTestSheet);
+		trace(gs.getSize());
 		trace(gs.getCells());
 	}		
 }
